@@ -1,137 +1,108 @@
+
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="百家樂智能記錄與下注建議", layout="centered")
-
-# 初始化 session state
+# 初始化 Session State
 if "history" not in st.session_state:
-    st.session_state.history = []  # 本局結果 Player/Banker/Tie
-if "bets" not in st.session_state:
-    st.session_state.bets = []     # 下注金額
-if "earnings" not in st.session_state:
-    st.session_state.earnings = [] # 盈虧
-if "cards" not in st.session_state:
-    st.session_state.cards = []    # 開牌牌型描述
-
-def record_result(result, bet, earning, card_info):
-    st.session_state.history.append(result)
-    st.session_state.bets.append(bet)
-    st.session_state.earnings.append(earning)
-    st.session_state.cards.append(card_info)
-
-def reset_all():
     st.session_state.history = []
-    st.session_state.bets = []
-    st.session_state.earnings = []
-    st.session_state.cards = []
+if "game_count" not in st.session_state:
+    st.session_state.game_count = 0
 
-def calc_streak():
-    if not st.session_state.history:
-        return 0, None
-    streak = 1
-    last = st.session_state.history[-1]
-    for r in reversed(st.session_state.history[:-1]):
-        if r == last and r != "Tie":
-            streak += 1
-        else:
-            break
-    return streak, last
+st.title("🎴 百家樂記錄與下注建議系統")
 
-st.title("🟟 百家樂智能記錄與下注建議")
+# 花色與點數選項
+suits = ["♠️", "♥️", "♦️", "♣️"]
+points = list(range(10))
 
-# 計算統計
-total = len(st.session_state.history)
-player_count = st.session_state.history.count("Player")
-banker_count = st.session_state.history.count("Banker")
-tie_count = st.session_state.history.count("Tie")
+def card_input(player):
+    cols = st.columns(3)
+    cards = []
+    for i in range(3):
+        with cols[i]:
+            suit = st.selectbox(f"{player} 牌 {i+1} 花色", suits, key=f"{player}_suit_{i}")
+            point = st.selectbox(f"{player} 牌 {i+1} 點數", points, key=f"{player}_point_{i}")
+            cards.append((suit, point))
+    return cards
 
-st.markdown("### 🟟 統計結果")
-st.write(f"總局數：{total}")
-st.write(f"Player 勝：{player_count}")
-st.write(f"Banker 勝：{banker_count}")
-st.write(f"Tie 和：{tie_count}")
+# 開牌輸入
+st.subheader("🂠 開牌紀錄")
+player_cards = card_input("閒家")
+banker_cards = card_input("莊家")
 
-# 計算勝率避免除0
-games_for_rate = total if total > 0 else 1
-player_rate = player_count / games_for_rate
-banker_rate = banker_count / games_for_rate
+# 計算點數
+def calc_total(cards):
+    return sum([card[1] for card in cards]) % 10
 
-streak, streak_side = calc_streak()
+player_total = calc_total(player_cards)
+banker_total = calc_total(banker_cards)
 
-st.markdown("### 🟟 智能下注建議")
+# 自動判斷勝負
+auto_result = "Tie"
+if player_total > banker_total:
+    auto_result = "Player"
+elif banker_total > player_total:
+    auto_result = "Banker"
 
-if player_rate > banker_rate:
-    recommended_side = "Player"
-    confidence = player_rate - banker_rate
-else:
-    recommended_side = "Banker"
-    confidence = banker_rate - player_rate
+# 顯示點數與自動判定
+st.write(f"閒家點數：{player_total}")
+st.write(f"莊家點數：{banker_total}")
+st.write(f"🔍 自動判斷勝負：**{auto_result}**")
 
-base_bet = 10
-max_bet = 100
-bet_amount = base_bet + int(confidence * (max_bet - base_bet))
+# 下注與實際結果輸入
+st.subheader("🎯 下注資訊")
+bet_side = st.selectbox("你下注的是", ["Player", "Banker"])
+bet_amount = st.number_input("下注金額", min_value=0, value=100)
+actual_result = st.selectbox("實際勝方", ["Player", "Banker", "Tie"])
+winlose = st.selectbox("這局結果", ["Win", "Lose", "Tie"])
 
-if streak_side == recommended_side:
-    bet_amount = int(bet_amount * 1.5)
-elif streak_side is not None and streak_side != recommended_side:
-    bet_amount = int(bet_amount * 0.7)
+# 儲存資料
+if st.button("✅ 紀錄本局"):
+    outcome = 0
+    if winlose == "Win":
+        if bet_side == "Player":
+            outcome = bet_amount
+        elif bet_side == "Banker":
+            outcome = bet_amount * 0.95
+    elif winlose == "Lose":
+        outcome = -bet_amount
 
-if bet_amount < 10:
-    bet_amount = 10
+    record = {
+        "閒家牌": player_cards,
+        "莊家牌": banker_cards,
+        "閒家點數": player_total,
+        "莊家點數": banker_total,
+        "判定結果": auto_result,
+        "實際結果": actual_result,
+        "下注": bet_side,
+        "下注金額": bet_amount,
+        "勝負": winlose,
+        "盈虧": round(outcome, 2)
+    }
+    st.session_state.history.append(record)
+    st.session_state.game_count += 1
+    st.success("已儲存本局！")
 
-st.write(f"建議下注方：**{recommended_side}**")
-st.write(f"建議下注金額：**{bet_amount} 元**")
-if streak_side is not None:
-    streak_type = "勝利" if streak_side == recommended_side else "失敗"
-    st.write(f"目前連續{streak}局{streak_type}")
-
-# 輸入本局完整結果
-st.markdown("### 🟟 輸入本局完整結果")
-
-with st.form("full_result_form"):
-    result = st.selectbox("本局結果", ["Player", "Banker", "Tie"])
-    card_info = st.text_input("開牌牌型/點數（可輸入描述）", "")
-    bet_side = st.selectbox("下注方", ["Player", "Banker"])
-    bet = st.number_input("下注金額", min_value=1, value=bet_amount)
-    win_lose = st.selectbox("下注結果", ["贏", "輸", "和局"])
-    submitted = st.form_submit_button("記錄本局")
-
-    if submitted:
-        earning = 0
-        if win_lose == "贏":
-            if bet_side == "Banker":
-                earning = bet * 0.95
-            else:
-                earning = bet * 2
-        elif win_lose == "輸":
-            earning = -bet
-        else:
-            earning = 0
-
-        record_result(result, bet, earning, card_info)
-        st.success(f"本局記錄完成，盈虧：{earning:.2f} 元")
-
-# 顯示下注歷史與盈虧
-st.markdown("### 🟟 下注歷史與盈虧")
-
-if total > 0:
-    data = []
-    for i in range(total):
-        data.append({
-            "局數": i + 1,
-            "結果": st.session_state.history[i],
-            "牌型": st.session_state.cards[i],
-            "下注金額": st.session_state.bets[i],
-            "盈虧": st.session_state.earnings[i]
-        })
-    df = pd.DataFrame(data)
+# 顯示歷史紀錄
+if st.session_state.history:
+    st.subheader("📋 歷史紀錄")
+    df = pd.DataFrame(st.session_state.history)
     st.dataframe(df)
 
-    total_earning = sum(st.session_state.earnings)
-    st.markdown(f"**總盈虧：{total_earning:.2f} 元**")
-else:
-    st.write("尚無記錄")
+    total_profit = sum([r["盈虧"] for r in st.session_state.history])
+    st.write(f"💰 總盈虧：{round(total_profit, 2)}")
 
-if st.button("🟟 重置所有記錄"):
-    reset_all()
-    st.success("所有資料已清除")
+    # 每 10 局統計
+    if st.session_state.game_count % 10 == 0:
+        last10 = st.session_state.history[-10:]
+        bets = [r for r in last10 if r["勝負"] in ["Win", "Lose"]]
+        wins = [r for r in bets if r["勝負"] == "Win"]
+        win_rate = len(wins) / len(bets) * 100 if bets else 0
+        st.subheader("📊 最近 10 局下注統計")
+        st.write(f"勝率：{win_rate:.1f}%")
+        st.write(f"盈虧：{sum(r['盈虧'] for r in last10)}")
+
+# 重置
+if st.button("🔁 重置所有紀錄"):
+    st.session_state.history = []
+    st.session_state.game_count = 0
+    st.success("已重置所有資料。")
